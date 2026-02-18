@@ -339,6 +339,28 @@ defmodule CalendarRecurrence.RRULE do
     end
   end
 
+  # Yearly BYDAY with BYMONTH (e.g., FREQ=YEARLY;BYMONTH=3;BYDAY=2SU)
+  defp step(%RRULE{
+         freq: :yearly,
+         interval: interval,
+         bymonth: months,
+         byday: [{_, _} | _] = byday,
+         bymonthday: []
+       })
+       when is_list(months) and length(months) > 0 do
+    months = Enum.sort(months)
+
+    fn
+      %DateTime{} = current ->
+        next = next_yearly_ordinal_byday(current, months, byday, interval)
+        DateTime.diff(next, current, :second)
+
+      current ->
+        next = next_yearly_ordinal_byday(current, months, byday, interval)
+        Date.diff(next, current)
+    end
+  end
+
   defp step(%RRULE{freq: :weekly, byday: [], interval: interval}),
     do: fn
       %DateTime{} = date ->
@@ -588,6 +610,45 @@ defmodule CalendarRecurrence.RRULE do
     years_to_add = div(new_month - 1, 12)
     remaining_month = rem(new_month - 1, 12) + 1
     %{date | year: date.year + years_to_add, month: remaining_month, day: 1}
+  end
+
+  defp next_yearly_ordinal_byday(current, months, byday, interval) do
+    matching_dates =
+      for month <- months,
+          {ordinal, weekday} <- byday,
+          day = nth_weekday_of_month(current.year, month, weekday, ordinal),
+          day != nil,
+          month > current.month or (month == current.month and day > current.day) do
+        {month, day}
+      end
+      |> Enum.sort()
+
+    case matching_dates do
+      [{month, day} | _] ->
+        %{current | month: month, day: day}
+
+      [] ->
+        find_first_yearly_ordinal_byday(current, current.year + interval, months, byday, interval)
+    end
+  end
+
+  defp find_first_yearly_ordinal_byday(current, year, months, byday, interval) do
+    matching_dates =
+      for month <- months,
+          {ordinal, weekday} <- byday,
+          day = nth_weekday_of_month(year, month, weekday, ordinal),
+          day != nil do
+        {month, day}
+      end
+      |> Enum.sort()
+
+    case matching_dates do
+      [{month, day} | _] ->
+        %{current | year: year, month: month, day: day}
+
+      [] ->
+        find_first_yearly_ordinal_byday(current, year + interval, months, byday, interval)
+    end
   end
 
   defimpl String.Chars do

@@ -661,5 +661,35 @@ defmodule CalendarRecurrence.RRULETest do
              ~D[2024-02-05],
              ~D[2024-03-04]
            ]
+
+    # FREQ=MONTHLY;BYDAY=-1FR → last Friday of every month (string round-trip)
+    assert Enum.take(RRULE.to_recurrence("FREQ=MONTHLY;BYDAY=-1FR", ~D[2024-01-26]), 4) == [
+             ~D[2024-01-26],
+             ~D[2024-02-23],
+             ~D[2024-03-29],
+             ~D[2024-04-26]
+           ]
+
+    # FREQ=MONTHLY;BYDAY=MO → every Monday of every month (string round-trip)
+    assert Enum.take(RRULE.to_recurrence("FREQ=MONTHLY;BYDAY=MO", ~D[2024-01-01]), 6) == [
+             ~D[2024-01-01],
+             ~D[2024-01-08],
+             ~D[2024-01-15],
+             ~D[2024-01-22],
+             ~D[2024-01-29],
+             ~D[2024-02-05]
+           ]
+  end
+
+  test "yearly BYDAY with BYMONTH (e.g., 2nd Sunday of March)" do
+    # FREQ=YEARLY;BYMONTH=3;BYDAY=2SU → second Sunday of March every year
+    {:ok, rrule} = RRULE.parse("FREQ=YEARLY;BYMONTH=3;BYDAY=2SU")
+    assert %RRULE{freq: :yearly, bymonth: [3], byday: [{2, 7}]} = rrule
+
+    assert Enum.take(RRULE.to_recurrence(rrule, ~D[2024-03-10]), 3) == [
+             ~D[2024-03-10],
+             ~D[2025-03-09],
+             ~D[2026-03-08]
+           ]
   end
 end
