@@ -1,8 +1,47 @@
 defmodule CalendarRecurrence.RRULE do
   @moduledoc """
-  RRULE parser.
+  RFC 5545 RRULE parser and recurrence generator.
 
-  See https://tools.ietf.org/html/rfc5545#section-3.3.10
+  Parses RRULE strings into `%RRULE{}` structs, converts them back to strings
+  via `String.Chars`, and generates recurring date streams via `to_recurrence/2`.
+
+  ## Supported RRULE properties
+
+    * `FREQ` — `SECONDLY`, `MINUTELY`, `HOURLY`, `DAILY`, `WEEKLY`, `MONTHLY`
+    * `INTERVAL` — repeat interval (default 1)
+    * `COUNT` — maximum number of occurrences
+    * `UNTIL` — end date (Date, NaiveDateTime, or DateTime with `Z` suffix)
+    * `BYDAY` — day-of-week filter, with optional ordinal prefix for `MONTHLY`:
+      - Plain: `MO`, `TU`, `WE`, `TH`, `FR`, `SA`, `SU`
+      - Ordinal: `1MO` (first Monday), `-1FR` (last Friday), `+2SU` (second Sunday)
+    * `BYMONTHDAY` — day-of-month (1–31 or -1–-31 for counting from end)
+    * `BYMONTH` — month filter (1–12)
+    * `BYHOUR`, `BYMINUTE`, `BYSECOND` — time components
+
+  ## BYDAY with MONTHLY frequency
+
+  When `FREQ=MONTHLY`, `BYDAY` supports two modes:
+
+    * **With ordinal prefix** — selects a specific occurrence of a weekday in each
+      month. For example, `BYDAY=1MO` means "the first Monday of every month" and
+      `BYDAY=-1FR` means "the last Friday of every month". Months that lack the
+      requested occurrence (e.g., a 5th Monday) are skipped.
+
+    * **Without ordinal prefix** — selects every occurrence of the weekday in each
+      month. For example, `BYDAY=MO` means "every Monday of every month".
+
+  ## Examples
+
+      iex> RRULE.parse!("FREQ=MONTHLY;BYDAY=1MO")
+      %RRULE{freq: :monthly, byday: [{1, 1}]}
+
+      iex> RRULE.parse!("FREQ=MONTHLY;BYDAY=-1FR")
+      %RRULE{freq: :monthly, byday: [{-1, 5}]}
+
+      iex> to_string(%RRULE{freq: :monthly, byday: [{1, 1}]})
+      "FREQ=MONTHLY;BYDAY=1MO"
+
+  See <https://tools.ietf.org/html/rfc5545#section-3.3.10>
   """
 
   defstruct freq: nil,
@@ -29,8 +68,8 @@ defmodule CalendarRecurrence.RRULE do
           # bysecond: [0..59],
           # byminute: [0..59],
           # byhour: [0..59],
-          # byday: [1..31],
-          # bymonthday: ,
+          # byday: [1..7 | {integer(), 1..7}],
+          # bymonthday: [-31..-1 | 1..31],
           # byyearday: ,
           # byweekno:
           # bymonth: [1..12]
@@ -40,6 +79,27 @@ defmodule CalendarRecurrence.RRULE do
 
   alias __MODULE__
 
+  @doc """
+  Parses an RRULE string into a `%RRULE{}` struct.
+
+  ## Examples
+
+      iex> RRULE.parse("FREQ=DAILY;COUNT=10")
+      {:ok, %RRULE{freq: :daily, count: 10}}
+
+      iex> RRULE.parse("FREQ=WEEKLY;BYDAY=MO,TU")
+      {:ok, %RRULE{freq: :weekly, byday: [1, 2]}}
+
+      iex> RRULE.parse("FREQ=MONTHLY;BYDAY=1MO")
+      {:ok, %RRULE{freq: :monthly, byday: [{1, 1}]}}
+
+      iex> RRULE.parse("FREQ=MONTHLY;BYDAY=-1FR")
+      {:ok, %RRULE{freq: :monthly, byday: [{-1, 5}]}}
+
+  Weekdays are represented as integers 1 (Monday) through 7 (Sunday).
+  Ordinal BYDAY values are tuples `{ordinal, weekday}` where positive
+  ordinals count from the start of the month and negative from the end.
+  """
   @spec parse(String.t()) :: {:ok, t()} | {:error, term()}
   def parse(binary) do
     case CalendarRecurrence.RRULE.Parser.parse(binary) do
@@ -73,6 +133,9 @@ defmodule CalendarRecurrence.RRULE do
   @doc """
   Converts `rrule` into a recurrence starting at given `start` date.
 
+  Accepts an `%RRULE{}` struct or a raw RRULE string. The `start` date can be
+  a `Date`, `NaiveDateTime`, or `DateTime`.
+
   ## Examples
 
       iex> RRULE.to_recurrence(%RRULE{freq: :daily}, ~D[2018-01-01]) |> Enum.take(3)
@@ -80,6 +143,24 @@ defmodule CalendarRecurrence.RRULE do
         ~D[2018-01-01],
         ~D[2018-01-02],
         ~D[2018-01-03]
+      ]
+
+  First Monday of every month:
+
+      iex> RRULE.to_recurrence("FREQ=MONTHLY;BYDAY=1MO", ~D[2024-01-01]) |> Enum.take(3)
+      [
+        ~D[2024-01-01],
+        ~D[2024-02-05],
+        ~D[2024-03-04]
+      ]
+
+  Last Friday of every month:
+
+      iex> RRULE.to_recurrence("FREQ=MONTHLY;BYDAY=-1FR", ~D[2024-01-26]) |> Enum.take(3)
+      [
+        ~D[2024-01-26],
+        ~D[2024-02-23],
+        ~D[2024-03-29]
       ]
 
   """

@@ -65,6 +65,9 @@ defmodule CalendarRecurrence.RRULETest do
     # Monthly BYDAY without ordinals (plain weekday)
     {:ok, %RRULE{freq: :monthly, byday: [1]}} = RRULE.parse("FREQ=MONTHLY;BYDAY=MO")
 
+    # Monthly BYDAY with multiple plain weekdays
+    {:ok, %RRULE{freq: :monthly, byday: [1, 5]}} = RRULE.parse("FREQ=MONTHLY;BYDAY=MO,FR")
+
     # Weekly BYDAY regression
     {:ok, %RRULE{freq: :weekly, byday: [1, 2]}} = RRULE.parse("FREQ=WEEKLY;BYDAY=MO,TU")
   end
@@ -99,6 +102,13 @@ defmodule CalendarRecurrence.RRULETest do
 
     assert "FREQ=MONTHLY;BYDAY=1MO,-1FR" =
              to_string(%RRULE{freq: :monthly, byday: [{1, 1}, {-1, 5}]})
+
+    # Plain monthly BYDAY
+    assert "FREQ=MONTHLY;BYDAY=MO" = to_string(%RRULE{freq: :monthly, byday: [1]})
+
+    # Parse -> to_string -> parse round-trip
+    {:ok, rrule} = RRULE.parse("FREQ=MONTHLY;BYDAY=1MO,-1FR")
+    assert {:ok, ^rrule} = RRULE.parse(to_string(rrule))
   end
 
   test "to_recurrence/1" do
@@ -470,6 +480,19 @@ defmodule CalendarRecurrence.RRULETest do
              ~U[2024-03-04 10:00:00Z]
            ]
 
+    # Monthly BYDAY: first Monday with NaiveDateTime
+    assert Enum.take(
+             RRULE.to_recurrence(
+               %RRULE{freq: :monthly, byday: [{1, 1}]},
+               ~N[2024-01-01 09:00:00]
+             ),
+             3
+           ) == [
+             ~N[2024-01-01 09:00:00],
+             ~N[2024-02-05 09:00:00],
+             ~N[2024-03-04 09:00:00]
+           ]
+
     # Monthly BYDAY: last Friday of every month
     assert Enum.take(
              RRULE.to_recurrence(%RRULE{freq: :monthly, byday: [{-1, 5}]}, ~D[2024-01-26]),
@@ -479,6 +502,17 @@ defmodule CalendarRecurrence.RRULETest do
              ~D[2024-02-23],
              ~D[2024-03-29],
              ~D[2024-04-26]
+           ]
+
+    # Monthly BYDAY: second-to-last Friday (-2)
+    assert Enum.take(
+             RRULE.to_recurrence(%RRULE{freq: :monthly, byday: [{-2, 5}]}, ~D[2024-01-19]),
+             4
+           ) == [
+             ~D[2024-01-19],
+             ~D[2024-02-16],
+             ~D[2024-03-22],
+             ~D[2024-04-19]
            ]
 
     # Monthly BYDAY: first Monday every 2 months
@@ -518,6 +552,31 @@ defmodule CalendarRecurrence.RRULETest do
              ~D[2025-02-03]
            ]
 
+    # Monthly BYDAY: ordinal with count
+    assert Enum.to_list(
+             RRULE.to_recurrence(
+               %RRULE{freq: :monthly, byday: [{1, 1}], count: 4},
+               ~D[2024-01-01]
+             )
+           ) == [
+             ~D[2024-01-01],
+             ~D[2024-02-05],
+             ~D[2024-03-04],
+             ~D[2024-04-01]
+           ]
+
+    # Monthly BYDAY: ordinal with until
+    assert Enum.to_list(
+             RRULE.to_recurrence(
+               %RRULE{freq: :monthly, byday: [{1, 1}], until: ~D[2024-03-04]},
+               ~D[2024-01-01]
+             )
+           ) == [
+             ~D[2024-01-01],
+             ~D[2024-02-05],
+             ~D[2024-03-04]
+           ]
+
     # Monthly BYDAY: every Monday of every month (plain, no ordinal)
     assert Enum.take(
              RRULE.to_recurrence(%RRULE{freq: :monthly, byday: [1]}, ~D[2024-01-01]),
@@ -529,6 +588,55 @@ defmodule CalendarRecurrence.RRULETest do
              ~D[2024-01-22],
              ~D[2024-01-29],
              ~D[2024-02-05]
+           ]
+
+    # Monthly BYDAY: every Monday with DateTime
+    assert Enum.take(
+             RRULE.to_recurrence(
+               %RRULE{freq: :monthly, byday: [1]},
+               ~U[2024-01-01 10:00:00Z]
+             ),
+             3
+           ) == [
+             ~U[2024-01-01 10:00:00Z],
+             ~U[2024-01-08 10:00:00Z],
+             ~U[2024-01-15 10:00:00Z]
+           ]
+
+    # Monthly BYDAY: every Monday and Friday of every month
+    assert Enum.take(
+             RRULE.to_recurrence(%RRULE{freq: :monthly, byday: [1, 5]}, ~D[2024-01-01]),
+             6
+           ) == [
+             ~D[2024-01-01],
+             ~D[2024-01-05],
+             ~D[2024-01-08],
+             ~D[2024-01-12],
+             ~D[2024-01-15],
+             ~D[2024-01-19]
+           ]
+
+    # Monthly BYDAY: every Monday every 2 months (plain with interval)
+    assert Enum.take(
+             RRULE.to_recurrence(
+               %RRULE{freq: :monthly, interval: 2, byday: [1]},
+               ~D[2024-01-29]
+             ),
+             3
+           ) == [
+             ~D[2024-01-29],
+             ~D[2024-03-04],
+             ~D[2024-03-11]
+           ]
+
+    # Monthly BYDAY: plain BYDAY year boundary
+    assert Enum.take(
+             RRULE.to_recurrence(%RRULE{freq: :monthly, byday: [1]}, ~D[2024-12-30]),
+             3
+           ) == [
+             ~D[2024-12-30],
+             ~D[2025-01-06],
+             ~D[2025-01-13]
            ]
 
     # Monthly BYDAY: multiple ordinal entries (first Monday and last Friday)
