@@ -135,7 +135,7 @@ defmodule CalendarRecurrence.RRULE do
 
   defp convert_date_type(%RRULE{until: until}, _), do: until
 
-  defp step(%RRULE{freq: :monthly, bymonthday: [], bymonth: months})
+  defp step(%RRULE{freq: :monthly, byday: [], bymonthday: [], bymonth: months})
        when is_list(months) and length(months) > 0 do
     months = Enum.sort(months)
 
@@ -165,7 +165,7 @@ defmodule CalendarRecurrence.RRULE do
     end
   end
 
-  defp step(%RRULE{freq: :monthly, bymonthday: days, bymonth: months})
+  defp step(%RRULE{freq: :monthly, byday: [], bymonthday: days, bymonth: months})
        when is_list(days) and is_list(months) and length(months) > 0 do
     months = Enum.sort(months)
     days = List.first(days)
@@ -196,7 +196,41 @@ defmodule CalendarRecurrence.RRULE do
     end
   end
 
-  defp step(%RRULE{freq: :monthly, interval: interval, bymonthday: []}) do
+  # Monthly BYDAY with ordinal prefixes (e.g., BYDAY=1MO,-1FR)
+  defp step(%RRULE{
+         freq: :monthly,
+         interval: interval,
+         byday: [{_, _} | _] = byday,
+         bymonthday: []
+       }) do
+    fn
+      %DateTime{} = current ->
+        next = next_monthly_ordinal_byday(current, byday, interval)
+        DateTime.diff(next, current, :second)
+
+      current ->
+        next = next_monthly_ordinal_byday(current, byday, interval)
+        Date.diff(next, current)
+    end
+  end
+
+  # Monthly BYDAY without ordinals (e.g., BYDAY=MO — every Monday of every month)
+  defp step(%RRULE{freq: :monthly, interval: interval, byday: [d | _] = byday, bymonthday: []})
+       when is_integer(d) do
+    days_of_week = Enum.sort(byday)
+
+    fn
+      %DateTime{} = current ->
+        next = next_monthly_plain_byday(current, days_of_week, interval)
+        DateTime.diff(next, current, :second)
+
+      current ->
+        next = next_monthly_plain_byday(current, days_of_week, interval)
+        Date.diff(next, current)
+    end
+  end
+
+  defp step(%RRULE{freq: :monthly, interval: interval, byday: [], bymonthday: []}) do
     fn
       %DateTime{} = current ->
         next = add_months(current, interval)
@@ -209,7 +243,8 @@ defmodule CalendarRecurrence.RRULE do
     end
   end
 
-  defp step(%RRULE{freq: :monthly, interval: interval, bymonthday: days}) when is_list(days) do
+  defp step(%RRULE{freq: :monthly, interval: interval, byday: [], bymonthday: days})
+       when is_list(days) do
     days = Enum.sort(days)
 
     fn
@@ -373,6 +408,107 @@ defmodule CalendarRecurrence.RRULE do
     end
   end
 
+  defp nth_weekday_of_month(year, month, weekday, ordinal) when ordinal > 0 do
+    first_day_dow = :calendar.day_of_the_week(year, month, 1)
+    days_until = rem(weekday - first_day_dow + 7, 7)
+    target_day = days_until + 1 + (ordinal - 1) * 7
+    last_day = :calendar.last_day_of_the_month(year, month)
+    if target_day <= last_day, do: target_day, else: nil
+  end
+
+  defp nth_weekday_of_month(year, month, weekday, ordinal) when ordinal < 0 do
+    last_day = :calendar.last_day_of_the_month(year, month)
+    last_day_dow = :calendar.day_of_the_week(year, month, last_day)
+    days_back = rem(last_day_dow - weekday + 7, 7)
+    last_occurrence = last_day - days_back
+    target_day = last_occurrence + (ordinal + 1) * 7
+    if target_day >= 1, do: target_day, else: nil
+  end
+
+  defp next_monthly_ordinal_byday(current, byday, interval) do
+    matching_days =
+      byday
+      |> Enum.map(fn {ordinal, weekday} ->
+        nth_weekday_of_month(current.year, current.month, weekday, ordinal)
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.filter(&(&1 > current.day))
+      |> Enum.sort()
+
+    case matching_days do
+      [next_day | _] ->
+        %{current | day: next_day}
+
+      [] ->
+        next_month_start = advance_month(current, interval)
+        find_first_ordinal_byday(next_month_start, byday, interval)
+    end
+  end
+
+  defp find_first_ordinal_byday(date, byday, interval) do
+    matching_days =
+      byday
+      |> Enum.map(fn {ordinal, weekday} ->
+        nth_weekday_of_month(date.year, date.month, weekday, ordinal)
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.sort()
+
+    case matching_days do
+      [first_day | _] ->
+        %{date | day: first_day}
+
+      [] ->
+        find_first_ordinal_byday(advance_month(date, interval), byday, interval)
+    end
+  end
+
+  defp next_monthly_plain_byday(current, days_of_week, interval) do
+    last_day = :calendar.last_day_of_the_month(current.year, current.month)
+    current_dow = :calendar.day_of_the_week(current.year, current.month, current.day)
+
+    candidates =
+      days_of_week
+      |> Enum.flat_map(fn dow ->
+        diff = rem(dow - current_dow + 7, 7)
+        diff = if diff == 0, do: 7, else: diff
+        next_day = current.day + diff
+        if next_day <= last_day, do: [next_day], else: []
+      end)
+      |> Enum.sort()
+
+    case candidates do
+      [next_day | _] ->
+        %{current | day: next_day}
+
+      [] ->
+        next_month_start = advance_month(current, interval)
+        find_first_plain_byday(next_month_start, days_of_week)
+    end
+  end
+
+  defp find_first_plain_byday(date, days_of_week) do
+    first_day_dow = :calendar.day_of_the_week(date.year, date.month, 1)
+
+    first_day =
+      days_of_week
+      |> Enum.map(fn dow ->
+        diff = rem(dow - first_day_dow + 7, 7)
+        diff + 1
+      end)
+      |> Enum.sort()
+      |> List.first()
+
+    %{date | day: first_day}
+  end
+
+  defp advance_month(date, interval) do
+    new_month = date.month + interval
+    years_to_add = div(new_month - 1, 12)
+    remaining_month = rem(new_month - 1, 12) + 1
+    %{date | year: date.year + years_to_add, month: remaining_month, day: 1}
+  end
+
   defimpl String.Chars do
     @doc """
     Converts `%RRULE{}` into a rrule string.
@@ -434,7 +570,13 @@ defmodule CalendarRecurrence.RRULE do
     end
 
     defp add_part(:byday = key, value) do
-      days = Enum.map_join(value, ",", fn day -> @weekdays[day] end)
+      days =
+        Enum.map_join(value, ",", fn
+          {ordinal, day} when ordinal > 0 -> "#{ordinal}#{@weekdays[day]}"
+          {ordinal, day} when ordinal < 0 -> "#{ordinal}#{@weekdays[day]}"
+          day -> @weekdays[day]
+        end)
+
       key_value(key, days)
     end
 
