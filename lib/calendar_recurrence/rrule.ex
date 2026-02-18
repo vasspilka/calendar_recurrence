@@ -61,7 +61,7 @@ defmodule CalendarRecurrence.RRULE do
   # wkst: nil
 
   @type t() :: %__MODULE__{
-          freq: :monthly | :weekly | :daily | :hourly | :minutely | :secondly | nil,
+          freq: :yearly | :monthly | :weekly | :daily | :hourly | :minutely | :secondly | nil,
           interval: pos_integer(),
           until: CalendarRecurrence.date() | nil,
           count: non_neg_integer() | nil
@@ -420,17 +420,7 @@ defmodule CalendarRecurrence.RRULE do
       DateTime.add(date, interval, :second) |> DateTime.diff(date, :second)
     end
 
-  defp add_months(%DateTime{} = date, interval) do
-    adjust_months(date, interval)
-  end
-
-  defp add_months(%Date{} = date, interval) do
-    adjust_months(date, interval)
-  end
-
-  defp add_months(%NaiveDateTime{} = date, interval) do
-    adjust_months(date, interval)
-  end
+  defp add_months(date, interval), do: adjust_months(date, interval)
 
   defp adjust_months(date, interval) do
     original_day = date.day
@@ -548,7 +538,12 @@ defmodule CalendarRecurrence.RRULE do
     end
   end
 
-  defp find_first_ordinal_byday(date, byday, interval) do
+  defp find_first_ordinal_byday(date, byday, interval, attempts \\ 0) do
+    if attempts >= 12 do
+      raise ArgumentError,
+            "no matching BYDAY occurrence found within 12 months of #{Date.to_iso8601(date)}"
+    end
+
     matching_days =
       byday
       |> Enum.map(fn {ordinal, weekday} ->
@@ -562,7 +557,7 @@ defmodule CalendarRecurrence.RRULE do
         %{date | day: first_day}
 
       [] ->
-        find_first_ordinal_byday(advance_month(date, interval), byday, interval)
+        find_first_ordinal_byday(advance_month(date, interval), byday, interval, attempts + 1)
     end
   end
 
@@ -632,7 +627,12 @@ defmodule CalendarRecurrence.RRULE do
     end
   end
 
-  defp find_first_yearly_ordinal_byday(current, year, months, byday, interval) do
+  defp find_first_yearly_ordinal_byday(current, year, months, byday, interval, attempts \\ 0) do
+    if attempts >= 10 do
+      raise ArgumentError,
+            "no matching yearly BYDAY occurrence found within 10 years of #{year}"
+    end
+
     matching_dates =
       for month <- months,
           {ordinal, weekday} <- byday,
@@ -647,7 +647,14 @@ defmodule CalendarRecurrence.RRULE do
         %{current | year: year, month: month, day: day}
 
       [] ->
-        find_first_yearly_ordinal_byday(current, year + interval, months, byday, interval)
+        find_first_yearly_ordinal_byday(
+          current,
+          year + interval,
+          months,
+          byday,
+          interval,
+          attempts + 1
+        )
     end
   end
 
@@ -714,8 +721,7 @@ defmodule CalendarRecurrence.RRULE do
     defp add_part(:byday = key, value) do
       days =
         Enum.map_join(value, ",", fn
-          {ordinal, day} when ordinal > 0 -> "#{ordinal}#{@weekdays[day]}"
-          {ordinal, day} when ordinal < 0 -> "#{ordinal}#{@weekdays[day]}"
+          {ordinal, day} -> "#{ordinal}#{@weekdays[day]}"
           day -> @weekdays[day]
         end)
 

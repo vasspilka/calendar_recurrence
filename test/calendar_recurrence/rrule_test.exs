@@ -679,6 +679,18 @@ defmodule CalendarRecurrence.RRULETest do
              ~D[2024-01-29],
              ~D[2024-02-05]
            ]
+
+    # Monthly BYDAY: start date doesn't match the rule (DTSTART is always emitted per RFC 5545)
+    # 2024-01-15 is a Monday but the 3rd Monday, not the 1st — start date is still included
+    assert Enum.take(
+             RRULE.to_recurrence(%RRULE{freq: :monthly, byday: [{1, 1}]}, ~D[2024-01-15]),
+             4
+           ) == [
+             ~D[2024-01-15],
+             ~D[2024-02-05],
+             ~D[2024-03-04],
+             ~D[2024-04-01]
+           ]
   end
 
   test "yearly BYDAY with BYMONTH (e.g., 2nd Sunday of March)" do
