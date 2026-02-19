@@ -141,9 +141,7 @@ defmodule CalendarRecurrence.RRULE do
       {ordinal, weekday}, :ok ->
         cond do
           weekday not in 1..7 ->
-            {:halt,
-             {:error,
-              "invalid BYDAY weekday #{weekday}, must be 1 (MO) through 7 (SU)"}}
+            {:halt, {:error, "invalid BYDAY weekday #{weekday}, must be 1 (MO) through 7 (SU)"}}
 
           ordinal == 0 or ordinal > 5 or ordinal < -5 ->
             {:halt,
@@ -158,9 +156,7 @@ defmodule CalendarRecurrence.RRULE do
         if weekday in 1..7,
           do: {:cont, :ok},
           else:
-            {:halt,
-             {:error,
-              "invalid BYDAY weekday #{weekday}, must be 1 (MO) through 7 (SU)"}}
+            {:halt, {:error, "invalid BYDAY weekday #{weekday}, must be 1 (MO) through 7 (SU)"}}
     end)
   end
 
