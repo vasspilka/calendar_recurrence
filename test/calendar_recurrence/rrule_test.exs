@@ -70,6 +70,16 @@ defmodule CalendarRecurrence.RRULETest do
 
     # Weekly BYDAY regression
     {:ok, %RRULE{freq: :weekly, byday: [1, 2]}} = RRULE.parse("FREQ=WEEKLY;BYDAY=MO,TU")
+
+    # BYDAY ordinal boundary values (valid)
+    {:ok, %RRULE{byday: [{5, 1}]}} = RRULE.parse("FREQ=MONTHLY;BYDAY=5MO")
+    {:ok, %RRULE{byday: [{-5, 5}]}} = RRULE.parse("FREQ=MONTHLY;BYDAY=-5FR")
+
+    # BYDAY ordinal out of range
+    {:error, "invalid BYDAY ordinal 6" <> _} = RRULE.parse("FREQ=MONTHLY;BYDAY=6TU")
+    {:error, "invalid BYDAY ordinal 9" <> _} = RRULE.parse("FREQ=MONTHLY;BYDAY=9WE")
+    {:error, "invalid BYDAY ordinal 0" <> _} = RRULE.parse("FREQ=MONTHLY;BYDAY=0TH")
+    {:error, "invalid BYDAY ordinal -6" <> _} = RRULE.parse("FREQ=MONTHLY;BYDAY=-6FR")
   end
 
   test "to_string/1" do

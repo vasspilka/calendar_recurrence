@@ -104,14 +104,10 @@ defmodule CalendarRecurrence.RRULE do
   def parse(binary) do
     case CalendarRecurrence.RRULE.Parser.parse(binary) do
       {:ok, [map], "", _, _, _} ->
-        if Map.has_key?(map, :freq) do
-          if Map.has_key?(map, :until) && Map.has_key?(map, :count) do
-            {:error, :until_or_count}
-          else
-            {:ok, struct!(__MODULE__, map)}
-          end
-        else
-          {:error, :missing_freq}
+        with :ok <- validate_freq(map),
+             :ok <- validate_until_count(map),
+             :ok <- validate_byday(map) do
+          {:ok, struct!(__MODULE__, map)}
         end
 
       {:ok, _, rest, _, _, _} ->
@@ -129,6 +125,46 @@ defmodule CalendarRecurrence.RRULE do
       {:error, reason} -> raise ArgumentError, "parse error: #{inspect(reason)}"
     end
   end
+
+  defp validate_freq(map) do
+    if Map.has_key?(map, :freq), do: :ok, else: {:error, :missing_freq}
+  end
+
+  defp validate_until_count(map) do
+    if Map.has_key?(map, :until) && Map.has_key?(map, :count),
+      do: {:error, :until_or_count},
+      else: :ok
+  end
+
+  defp validate_byday(%{byday: days}) do
+    Enum.reduce_while(days, :ok, fn
+      {ordinal, weekday}, :ok ->
+        cond do
+          weekday not in 1..7 ->
+            {:halt,
+             {:error,
+              "invalid BYDAY weekday #{weekday}, must be 1 (MO) through 7 (SU)"}}
+
+          ordinal == 0 or ordinal > 5 or ordinal < -5 ->
+            {:halt,
+             {:error,
+              "invalid BYDAY ordinal #{ordinal}, must be between -5 and 5 (excluding 0), e.g. 1MO (first Monday) or -1FR (last Friday)"}}
+
+          true ->
+            {:cont, :ok}
+        end
+
+      weekday, :ok when is_integer(weekday) ->
+        if weekday in 1..7,
+          do: {:cont, :ok},
+          else:
+            {:halt,
+             {:error,
+              "invalid BYDAY weekday #{weekday}, must be 1 (MO) through 7 (SU)"}}
+    end)
+  end
+
+  defp validate_byday(_map), do: :ok
 
   @doc """
   Converts `rrule` into a recurrence starting at given `start` date.
@@ -541,7 +577,7 @@ defmodule CalendarRecurrence.RRULE do
   defp find_first_ordinal_byday(date, byday, interval, attempts \\ 0) do
     if attempts >= 12 do
       raise ArgumentError,
-            "no matching BYDAY occurrence found within 12 months of #{Date.to_iso8601(date)}"
+            "no matching BYDAY occurrence found within #{12 * interval} months of #{Date.to_iso8601(date)}"
     end
 
     matching_days =
