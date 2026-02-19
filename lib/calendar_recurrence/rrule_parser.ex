@@ -1,5 +1,5 @@
 # Generated from lib/calendar_recurrence/rrule_parser.ex.exs, do not edit.
-# Generated at 2026-02-18 22:55:22Z.
+# Generated at 2026-02-19 00:12:47Z.
 
 if Code.ensure_loaded?(NimbleParsec) do
   defmodule CalendarRecurrence.RRULE.ParserHelpers do
